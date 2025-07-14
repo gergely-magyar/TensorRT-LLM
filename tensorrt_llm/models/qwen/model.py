@@ -343,7 +343,7 @@ class QWenForCausalLM(DecoderModelForCausalLM):
                     "mlp.shared_expert_gate": "mlp.shared_expert_gate",
                     "fc": ["up_proj", "gate_proj"],
                 }
-            elif config.qwen_type in {"qwen2", "qwen2_vl"
+            elif config.qwen_type in {"qwen2", "qwen2_vl", "qwen2_5_vl"
                                       } and config.tie_word_embeddings:
                 custom_dict = {"lm_head": "model.embed_tokens"}
             elif config.architecture == "Qwen2ForSequenceClassification":
