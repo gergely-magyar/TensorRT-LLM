@@ -137,7 +137,7 @@ class TritonPythonModel:
 
             assert self.model_type in [
                 'llava', 'blip2-opt', 'vila', 'mllama', 'llava_onevision',
-                'qwen2_vl'
+                'qwen2_vl', 'qwen2_5_vl'
             ], f"[TensorRT-LLM][ERROR] Currently supported multi-modal models are llava, blip2-opt, vila, mllama, llava_onevision and qwen2_vl. Got {self.model_type}."
 
             assert self.model_type != 'llava_onevison' or self.max_num_images is None or self.max_num_images <= 1, f"LLaVA-OneVsion is not support multi image inference currently."
@@ -151,7 +151,7 @@ class TritonPythonModel:
                 llm_model_config["pretrained_config"]["vocab_size"])
             self._setup_ptable_shape(llm_model_config)
 
-            if self.model_type in ['mllama', 'llava_onevision', 'qwen2_vl']:
+            if self.model_type in ['mllama', 'llava_onevision', 'qwen2_vl', 'qwen2_5_vl']:
                 self.vision_preprocessor = VisionPreProcessor(
                     self.model_type,
                     AutoProcessor.from_pretrained(tokenizer_dir), model_config)
@@ -317,6 +317,16 @@ class TritonPythonModel:
                     qwen2vl_input_length_tensor = processed_tensors.get(
                         "REQUEST_INPUT_LEN")
                     processed_tensors.pop("REQUEST_INPUT_LEN")
+                elif self.model_type == 'qwen2_5_vl':
+                    processed_tensors = self.vision_preprocessor.qwen2_vl_process_image(
+                        queries=query.astype(str).tolist(),
+                        img_urls=img_urls,
+                        image_bytes=image_bytes,
+                    )
+                    qwen2vl_input_id_tensor = processed_tensors.get("INPUT_IDS")
+                    processed_tensors.pop("INPUT_IDS")
+                    qwen2vl_input_length_tensor = processed_tensors.get(
+                        "REQUEST_INPUT_LEN")
                 else:
                     raise ValueError(
                         "Unsupported model type for IMAGE_BYTES or IMAGE_URL inputs"
@@ -347,7 +357,7 @@ class TritonPythonModel:
                 embedding_bias_words, embedding_bias_weights,
                 self.embedding_bias_weights_dtype, batch_size)
 
-            if prompt_table_extra_id is not None and self.model_type != 'qwen2_vl':
+            if prompt_table_extra_id is not None and self.model_type not in ['qwen2_vl', 'qwen2_5_vl']:
                 prompt_table_extra_ids = np.zeros_like(input_id)
                 for i in range(batch_size):
                     prompt_table_extra_ids[i] = np.where(
@@ -358,6 +368,11 @@ class TritonPythonModel:
             # objects to create pb_utils.InferenceResponse.
             # Qwen2-VL model has special logic to process input ids
             if self.model_type == 'qwen2_vl':
+                input_id_tensor = pb_utils.Tensor.from_dlpack(
+                    'INPUT_ID', qwen2vl_input_id_tensor)
+                request_input_len_tensor = pb_utils.Tensor.from_dlpack(
+                    'REQUEST_INPUT_LEN', qwen2vl_input_length_tensor)
+            elif self.model_type == 'qwen2_5_vl':
                 input_id_tensor = pb_utils.Tensor.from_dlpack(
                     'INPUT_ID', qwen2vl_input_id_tensor)
                 request_input_len_tensor = pb_utils.Tensor.from_dlpack(
@@ -545,6 +560,8 @@ class TritonPythonModel:
         else:
             # Qwen2-VL input id is calculated when processing image
             if 'qwen2_vl' == self.model_type:
+                return None, None
+            if 'qwen2_5_vl' == self.model_type:
                 return None, None
             if self.is_multimodal and self.max_num_images and self.max_num_images > 1:
                 start_ids = self._process_multi_image_inputs(query)
